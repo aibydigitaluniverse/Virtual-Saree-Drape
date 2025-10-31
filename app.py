@@ -3,44 +3,42 @@ import numpy as np
 from PIL import Image
 
 def drape_saree(model_image, saree_image):
-    # Convert PIL → OpenCV RGB arrays
+    # Convert PIL to NumPy RGB
     model = np.array(model_image.convert("RGB"))
     saree = np.array(saree_image.convert("RGB"))
 
-    # Resize saree to match model width
-    saree_resized = cv2.resize(
-        saree, (model.shape[1], int(model.shape[1] * saree.shape[0] / saree.shape[1]))
-    )
+    # Resize saree to model width
+    model_h, model_w = model.shape[:2]
+    aspect_ratio = saree.shape[0] / saree.shape[1]
+    new_height = int(model_w * aspect_ratio)
+    saree_resized = cv2.resize(saree, (model_w, new_height))
 
-    # Convert to float for safe math operations
-    saree_lab = cv2.cvtColor(saree_resized, cv2.COLOR_RGB2LAB).astype(np.float32)
+    # Convert to LAB for better tone matching
     model_lab = cv2.cvtColor(model, cv2.COLOR_RGB2LAB).astype(np.float32)
+    saree_lab = cv2.cvtColor(saree_resized, cv2.COLOR_RGB2LAB).astype(np.float32)
 
-    # Simple color balance to blend tones
-    l_mean, a_mean, b_mean = np.mean(model_lab, axis=(0, 1))
-    l_s, a_s, b_s = np.mean(saree_lab, axis=(0, 1))
-    saree_lab[..., 0] += (l_mean - l_s)
-    saree_lab[..., 1] += (a_mean - a_s)
-    saree_lab[..., 2] += (b_mean - b_s)
+    # Match color tone between model and saree
+    l_mean_m, a_mean_m, b_mean_m = np.mean(model_lab, axis=(0, 1))
+    l_mean_s, a_mean_s, b_mean_s = np.mean(saree_lab, axis=(0, 1))
 
-    # Clip and convert back to uint8
+    saree_lab[..., 0] += (l_mean_m - l_mean_s)
+    saree_lab[..., 1] += (a_mean_m - a_mean_s)
+    saree_lab[..., 2] += (b_mean_m - b_mean_s)
     saree_lab = np.clip(saree_lab, 0, 255).astype(np.uint8)
-    saree_resized = cv2.cvtColor(saree_lab, cv2.COLOR_LAB2RGB)
 
-    # Create overlay from waist down (simulation)
-    overlay = model.copy()
-    h = model.shape[0]
-    start_y = int(h * 0.55)
-    end_y = min(start_y + saree_resized.shape[0], h)
+    saree_matched = cv2.cvtColor(saree_lab, cv2.COLOR_LAB2RGB)
+
+    # Blend from waist down
+    start_y = int(model_h * 0.55)
+    end_y = min(start_y + saree_matched.shape[0], model_h)
     alpha = 0.5
 
-    overlay[start_y:end_y, :] = cv2.addWeighted(
-        model[start_y:end_y, :],
-        1 - alpha,
-        saree_resized[: end_y - start_y, :],
-        alpha,
-        0,
-    )
+    # Ensure blending region sizes match
+    region_model = model[start_y:end_y, :]
+    region_saree = saree_matched[:end_y - start_y, :region_model.shape[1]]
 
-    blended = Image.fromarray(overlay)
-    return blended
+    blended_region = cv2.addWeighted(region_model, 1 - alpha, region_saree, alpha, 0)
+    blended = model.copy()
+    blended[start_y:end_y, :] = blended_region
+
+    return Image.fromarray(blended)
