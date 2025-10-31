@@ -5,7 +5,47 @@ from PIL import Image
 import cv2
 
 # Define a function to perform the saree draping logic (placeholder for now)
+import cv2
+import numpy as np
+from PIL import Image
+
 def drape_saree(model_image, saree_image):
+    # Convert PIL to OpenCV
+    model = np.array(model_image.convert("RGB"))
+    saree = np.array(saree_image.convert("RGB"))
+
+    # Resize saree to match model width
+    saree_resized = cv2.resize(saree, (model.shape[1], int(model.shape[1] * saree.shape[0] / saree.shape[1])))
+
+    # Apply color adjustment to blend naturally
+    saree_resized = cv2.cvtColor(saree_resized, cv2.COLOR_BGR2LAB)
+    model_lab = cv2.cvtColor(model, cv2.COLOR_BGR2LAB)
+    l_mean, a_mean, b_mean = np.mean(model_lab[..., 0]), np.mean(model_lab[..., 1]), np.mean(model_lab[..., 2])
+    l_s, a_s, b_s = np.mean(saree_resized[..., 0]), np.mean(saree_resized[..., 1]), np.mean(saree_resized[..., 2])
+    saree_resized[..., 0] += (l_mean - l_s)
+    saree_resized[..., 1] += (a_mean - a_s)
+    saree_resized[..., 2] += (b_mean - b_s)
+    saree_resized = np.clip(saree_resized, 0, 255).astype(np.uint8)
+    saree_resized = cv2.cvtColor(saree_resized, cv2.COLOR_LAB2BGR)
+
+    # Blend saree texture onto lower body (simulation)
+    overlay = model.copy()
+    height = model.shape[0]
+    start_y = int(height * 0.55)  # Start draping from waist
+    end_y = min(start_y + saree_resized.shape[0], height)
+    alpha = 0.5
+
+    overlay[start_y:end_y, :] = cv2.addWeighted(
+        model[start_y:end_y, :],
+        1 - alpha,
+        saree_resized[:end_y - start_y, :],
+        alpha,
+        0
+    )
+
+    blended = Image.fromarray(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+    return blended
+
     """
     This is a placeholder for the actual saree draping logic.
     It currently performs the same basic affine transformation as the previous step.
